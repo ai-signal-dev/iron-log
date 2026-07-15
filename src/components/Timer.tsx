@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Play, Pause, RotateCcw, Plus, Minus } from 'lucide-react'
+import { useApp } from '../context/AppContext'
 
 interface TimerProps {
   onComplete?: () => void
 }
 
 export default function Timer({ onComplete }: TimerProps) {
+  const { t } = useApp()
   const [minutes, setMinutes] = useState(() => {
     const saved = localStorage.getItem('timer-minutes')
     return saved ? parseInt(saved) : 1
@@ -138,7 +140,7 @@ export default function Timer({ onComplete }: TimerProps) {
       <div className="flex justify-center gap-3">
         {timeLeft === null ? (
           <button onClick={start} className="btn-primary flex items-center gap-2">
-            <Play size={16} /> Start
+            <Play size={16} /> {t('start')}
           </button>
         ) : (
           <>
@@ -147,10 +149,10 @@ export default function Timer({ onComplete }: TimerProps) {
               className="btn-primary flex items-center gap-2"
             >
               {isRunning ? <Pause size={16} /> : <Play size={16} />}
-              {isRunning ? 'Pause' : 'Resume'}
+              {isRunning ? t('pause') : t('resume')}
             </button>
             <button onClick={reset} className="btn-secondary flex items-center gap-2">
-              <RotateCcw size={16} /> Reset
+              <RotateCcw size={16} /> {t('reset')}
             </button>
           </>
         )}

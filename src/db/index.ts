@@ -5,6 +5,7 @@ export interface Exercise {
   name: string
   category: MuscleGroup
   isCustom: boolean
+  userId?: string  // null = shared/default exercises
 }
 
 export type MuscleGroup = 'chest' | 'back' | 'legs' | 'shoulders' | 'arms' | 'core'
@@ -17,6 +18,7 @@ export interface WorkoutSet {
 
 export interface WorkoutEntry {
   id?: number
+  userId: string
   exerciseId: number
   exerciseName: string
   category: MuscleGroup
@@ -27,6 +29,7 @@ export interface WorkoutEntry {
 
 export interface Preset {
   id?: number
+  userId: string
   name: string
   exercises: { exerciseId: number; exerciseName: string; category: MuscleGroup }[]
 }
@@ -49,6 +52,12 @@ class IronLogDB extends Dexie {
       exercises: '++id, name, category, isCustom',
       workouts: '++id, exerciseId, date, category, createdAt',
       presets: '++id, name',
+      timerSettings: '++id',
+    })
+    this.version(2).stores({
+      exercises: '++id, name, category, isCustom, userId',
+      workouts: '++id, userId, exerciseId, date, category, createdAt',
+      presets: '++id, userId, name',
       timerSettings: '++id',
     })
   }

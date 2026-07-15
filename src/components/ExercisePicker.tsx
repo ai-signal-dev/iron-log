@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, type Exercise, type MuscleGroup } from '../db'
+import { useApp } from '../context/AppContext'
 import { Search, X } from 'lucide-react'
+import type { TranslationKey } from '../i18n'
 
-const categoryLabels: Record<MuscleGroup, string> = {
-  chest: 'Chest',
-  back: 'Back',
-  legs: 'Legs',
-  shoulders: 'Shoulders',
-  arms: 'Arms',
-  core: 'Core',
-}
+const categoryKeys: { key: MuscleGroup; labelKey: TranslationKey }[] = [
+  { key: 'chest', labelKey: 'chest' },
+  { key: 'back', labelKey: 'back' },
+  { key: 'legs', labelKey: 'legs' },
+  { key: 'shoulders', labelKey: 'shoulders' },
+  { key: 'arms', labelKey: 'arms' },
+  { key: 'core', labelKey: 'core' },
+]
 
 interface ExercisePickerProps {
   onSelect: (exercise: Exercise) => void
@@ -18,15 +20,15 @@ interface ExercisePickerProps {
 }
 
 export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProps) {
+  const { t } = useApp()
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<MuscleGroup | null>(null)
 
   const exercises = useLiveQuery(() => {
-    let query = db.exercises.orderBy('name')
     if (selectedCategory) {
-      query = db.exercises.where('category').equals(selectedCategory)
+      return db.exercises.where('category').equals(selectedCategory).toArray()
     }
-    return query.toArray()
+    return db.exercises.orderBy('name').toArray()
   }, [selectedCategory])
 
   const filtered = exercises?.filter(e =>
@@ -37,7 +39,7 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end">
       <div className="w-full max-w-lg mx-auto bg-surface border-t border-white/5 rounded-t-3xl max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-white/5">
-          <h2 className="text-lg font-medium">Select Exercise</h2>
+          <h2 className="text-lg font-medium">{t('selectExercise')}</h2>
           <button onClick={onClose} className="p-2 text-text-muted hover:text-text-primary">
             <X size={20} />
           </button>
@@ -50,7 +52,7 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search exercises..."
+              placeholder={t('searchExercises')}
               className="w-full bg-surface-hover border border-white/5 rounded-xl pl-9 pr-4 py-2.5 
                          text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-from"
             />
@@ -63,17 +65,17 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
                 !selectedCategory ? 'bg-gradient-accent text-white' : 'bg-surface-hover text-text-secondary'
               }`}
             >
-              All
+              {t('all')}
             </button>
-            {(Object.keys(categoryLabels) as MuscleGroup[]).map(cat => (
+            {categoryKeys.map(({ key, labelKey }) => (
               <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
+                key={key}
+                onClick={() => setSelectedCategory(key)}
                 className={`px-3 py-1 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                  selectedCategory === cat ? 'bg-gradient-accent text-white' : 'bg-surface-hover text-text-secondary'
+                  selectedCategory === key ? 'bg-gradient-accent text-white' : 'bg-surface-hover text-text-secondary'
                 }`}
               >
-                {categoryLabels[cat]}
+                {t(labelKey)}
               </button>
             ))}
           </div>
@@ -87,7 +89,7 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
               className="w-full text-left px-4 py-3 rounded-xl hover:bg-surface-hover transition-colors"
             >
               <span className="text-text-primary">{exercise.name}</span>
-              <span className="ml-2 text-xs text-text-muted">{categoryLabels[exercise.category]}</span>
+              <span className="ml-2 text-xs text-text-muted">{t(exercise.category as TranslationKey)}</span>
             </button>
           ))}
         </div>

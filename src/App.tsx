@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { seedExercises } from './db/seed'
+import { useApp } from './context/AppContext'
 import Layout from './components/Layout'
+import UserSetup from './components/UserSetup'
 import WorkoutPage from './pages/WorkoutPage'
 import HistoryPage from './pages/HistoryPage'
 import CalendarPage from './pages/CalendarPage'
@@ -10,9 +12,15 @@ import PresetsPage from './pages/PresetsPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
+  const { currentUser } = useApp()
+
   useEffect(() => {
     seedExercises()
   }, [])
+
+  if (!currentUser) {
+    return <UserSetup />
+  }
 
   return (
     <Routes>
