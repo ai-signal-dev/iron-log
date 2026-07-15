@@ -39,21 +39,23 @@ export default function WorkoutPage() {
       return
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert('This browser does not support speech recognition.')
+      alert(locale === 'ja'
+        ? 'このブラウザは音声認識に対応していません。Chrome/Edgeをお使いください。'
+        : 'Speech recognition is not supported. Please use Chrome or Edge.')
       return
     }
 
     const recognition = new SpeechRecognition()
     recognition.lang = locale === 'ja' ? 'ja-JP' : 'en-US'
-    recognition.continuous = true
+    recognition.continuous = false
     recognition.interimResults = false
+    recognition.maxAlternatives = 1
 
     recognition.onresult = async (event: SpeechRecognitionEvent) => {
-      const lastResult = event.results[event.results.length - 1]
-      if (!lastResult[0]) return
-      const transcript = lastResult[0].transcript
+      const transcript = event.results[0]?.[0]?.transcript
+      if (!transcript) return
 
       const parsed = await parseVoiceInput(transcript)
       for (const entry of parsed) {
@@ -62,7 +64,6 @@ export default function WorkoutPage() {
             e => e.exercise.id === entry.exercise!.id
           )
           if (existingIdx >= 0 && entry.weight > 0 && entry.reps > 0) {
-            // Add set to existing exercise
             for (let i = 0; i < entry.sets; i++) {
               const newSet: WorkoutSet = { weight: entry.weight, reps: entry.reps, completedAt: Date.now() }
               setActiveExercises(prev => prev.map((e, idx) =>
@@ -70,7 +71,6 @@ export default function WorkoutPage() {
               ))
             }
           } else {
-            // Add new exercise with sets if provided
             const sets: WorkoutSet[] = []
             if (entry.weight > 0 && entry.reps > 0) {
               for (let i = 0; i < entry.sets; i++) {
@@ -88,12 +88,23 @@ export default function WorkoutPage() {
       }
     }
 
-    recognition.onerror = () => setIsListening(false)
-    recognition.onend = () => setIsListening(false)
+    recognition.onerror = (e: any) => {
+      console.error('Speech recognition error:', e.error)
+      setIsListening(false)
+    }
 
-    recognition.start()
-    recognitionRef.current = recognition
-    setIsListening(true)
+    recognition.onend = () => {
+      setIsListening(false)
+    }
+
+    try {
+      recognition.start()
+      recognitionRef.current = recognition
+      setIsListening(true)
+    } catch (e) {
+      console.error('Failed to start speech recognition:', e)
+      setIsListening(false)
+    }
   }, [isListening, locale, activeExercises])
 
   const addExercise = (exercise: Exercise) => {
