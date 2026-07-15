@@ -7,9 +7,26 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  html, body, #root {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
   body {
     @apply min-h-screen bg-gradient-surface;
     overscroll-behavior: none;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 
   ::-webkit-scrollbar {

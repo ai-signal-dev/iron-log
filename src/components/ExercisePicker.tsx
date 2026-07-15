@@ -20,7 +20,7 @@ interface ExercisePickerProps {
 }
 
 export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProps) {
-  const { t } = useApp()
+  const { t, locale, currentUser } = useApp()
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<MuscleGroup | null>(null)
   const [showCustom, setShowCustom] = useState(false)
@@ -34,14 +34,35 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
     return db.exercises.orderBy('name').toArray()
   }, [selectedCategory])
 
-  const filtered = exercises?.filter(e =>
-    e.name.toLowerCase().includes(search.toLowerCase())
-  ) ?? []
+  // Get frequently used exercises (top 6 by workout count)
+  const frequentExercises = useLiveQuery(async () => {
+    if (!currentUser) return []
+    const workouts = await db.workouts.where('userId').equals(currentUser.id).toArray()
+    const counts: Record<number, number> = {}
+    for (const w of workouts) {
+      counts[w.exerciseId] = (counts[w.exerciseId] || 0) + 1
+    }
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    const ids = sorted.map(([id]) => parseInt(id))
+    const exs = await db.exercises.where('id').anyOf(ids).toArray()
+    return exs.sort((a, b) => (counts[b.id!] || 0) - (counts[a.id!] || 0))
+  }, [currentUser?.id])
+
+  const getDisplayName = (ex: Exercise) => {
+    if (locale === 'ja' && ex.nameJa) return ex.nameJa
+    return ex.name
+  }
+
+  const filtered = exercises?.filter(e => {
+    const q = search.toLowerCase()
+    return e.name.toLowerCase().includes(q) || (e.nameJa || '').includes(search)
+  }) ?? []
 
   const handleAddCustom = async () => {
     if (!customName.trim()) return
     const id = await db.exercises.add({
       name: customName.trim(),
+      nameJa: customName.trim(),
       category: customCategory,
       isCustom: true,
     })
@@ -100,7 +121,25 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
           </div>
         ) : (
           <>
-            <div className="p-4 border-b border-white/5">
+            <div className="p-4 border-b border-white/5 space-y-3">
+              {/* Frequently Used */}
+              {frequentExercises && frequentExercises.length > 0 && !search && (
+                <div>
+                  <p className="text-xs text-text-muted mb-2">{t('frequentlyUsed')}</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {frequentExercises.map(ex => (
+                      <button
+                        key={ex.id}
+                        onClick={() => onSelect(ex)}
+                        className="px-3 py-1.5 rounded-lg text-sm bg-surface-hover text-text-primary hover:bg-white/10 transition-colors"
+                      >
+                        {getDisplayName(ex)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                 <input
@@ -113,7 +152,7 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
                 />
               </div>
 
-              <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 <button
                   onClick={() => setSelectedCategory(null)}
                   className={`px-3 py-1 rounded-lg text-sm whitespace-nowrap transition-colors ${
@@ -143,13 +182,13 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
                   onClick={() => onSelect(exercise)}
                   className="w-full text-left px-4 py-3 rounded-xl hover:bg-surface-hover transition-colors"
                 >
-                  <span className="text-text-primary">{exercise.name}</span>
+                  <span className="text-text-primary">{getDisplayName(exercise)}</span>
                   <span className="ml-2 text-xs text-text-muted">{t(exercise.category as TranslationKey)}</span>
                 </button>
               ))}
               {filtered.length === 0 && search && (
                 <div className="text-center py-6">
-                  <p className="text-text-muted text-sm mb-3">"{search}" not found</p>
+                  <p className="text-text-muted text-sm mb-3">"{search}"</p>
                   <button
                     onClick={() => { setCustomName(search); setShowCustom(true) }}
                     className="btn-secondary text-sm"

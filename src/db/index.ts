@@ -3,6 +3,7 @@ import Dexie, { type Table } from 'dexie'
 export interface Exercise {
   id?: number
   name: string
+  nameJa?: string
   category: MuscleGroup
   isCustom: boolean
   userId?: string
