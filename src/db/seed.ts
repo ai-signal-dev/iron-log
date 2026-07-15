@@ -82,8 +82,15 @@ const exercises: Omit<Exercise, 'id'>[] = [
 ]
 
 export async function seedExercises() {
-  const count = await db.exercises.count()
-  if (count === 0) {
+  try {
+    const count = await db.exercises.count()
+    if (count === 0) {
+      await db.exercises.bulkAdd(exercises)
+    }
+  } catch (e) {
+    // If DB upgrade failed, clear and re-seed
+    console.warn('Seed failed, re-creating exercises table', e)
+    await db.exercises.clear()
     await db.exercises.bulkAdd(exercises)
   }
 }
