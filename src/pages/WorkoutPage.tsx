@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus, Check, Trash2, Mic } from 'lucide-react'
 import { db, type Exercise, type WorkoutSet } from '../db'
@@ -6,8 +6,10 @@ import { useApp } from '../context/AppContext'
 import { parseVoiceInput } from '../utils/voiceParser'
 import ExercisePicker from '../components/ExercisePicker'
 import Timer from '../components/Timer'
+
 interface ActiveExercise { exercise: Exercise; weight: number; sets: WorkoutSet[]; currentReps: number; savedId?: number }
 const QUICK_WEIGHTS = [30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
 export default function WorkoutPage() {
   const { t, currentUser, locale } = useApp()
   const [activeExercises, setActiveExercises] = useState<ActiveExercise[]>([])
@@ -20,15 +22,115 @@ export default function WorkoutPage() {
   const activeExercisesRef = useRef(activeExercises)
   useEffect(() => { activeExercisesRef.current = activeExercises }, [activeExercises])
   const today = new Date().toISOString().split('T')[0]
-  const todaysWorkouts = useLiveQuery(async () => { if (!currentUser) return []; return db.workouts.where('userId').equals(currentUser.id).and(w => w.date === today).toArray() }, [currentUser?.id, today])
-  useEffect(() => { if (initialLoadDone || !todaysWorkouts) return; if (todaysWorkouts.length > 0) { setActiveExercises(todaysWorkouts.map(w => ({ exercise: { id: w.exerciseId, name: w.exerciseName, category: w.category, isCustom: false }, weight: w.sets.length > 0 ? w.sets[w.sets.length - 1].weight : 0, sets: w.sets, currentReps: w.sets.length > 0 ? w.sets[w.sets.length - 1].reps : 10, savedId: w.id }))) }; setInitialLoadDone(true) }, [todaysWorkouts, initialLoadDone])
-  const getExerciseDisplayName = (exercise: Exercise) => { if (locale === 'ja' && exercise.nameJa) return exercise.nameJa; return exercise.name }
-  const toggleVoice = useCallback(() => { if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return }; const SR = window.SpeechRecognition || (window as any).webkitSpeechRecognition; if (!SR) { alert('Speech recognition not supported.'); return }; const recognition = new SR(); recognition.lang = locale === 'ja' ? 'ja-JP' : 'en-US'; recognition.continuous = false; recognition.interimResults = false; recognition.maxAlternatives = 1; recognition.onresult = async (event: SpeechRecognitionEvent) => { const transcript = event.results[0]?.[0]?.transcript; if (!transcript) return; const parsed = await parseVoiceInput(transcript); for (const entry of parsed) { if (entry.exercise) { const current = activeExercisesRef.current; const existingIdx = current.findIndex(e => e.exercise.id === entry.exercise!.id); if (existingIdx >= 0 && entry.weight > 0 && entry.reps > 0) { for (let i = 0; i < entry.sets; i++) { const newSet: WorkoutSet = { weight: entry.weight, reps: entry.reps, completedAt: Date.now() }; setActiveExercises(prev => prev.map((e, idx) => idx === existingIdx ? { ...e, weight: entry.weight, sets: [...e.sets, newSet] } : e)) } } else { const sets: WorkoutSet[] = []; if (entry.weight > 0 && entry.reps > 0) { for (let i = 0; i < entry.sets; i++) { sets.push({ weight: entry.weight, reps: entry.reps, completedAt: Date.now() }) } }; setActiveExercises(prev => [...prev, { exercise: entry.exercise!, weight: entry.weight || 0, sets, currentReps: entry.reps || 10 }]) } } } }; recognition.onerror = () => setIsListening(false); recognition.onend = () => setIsListening(false); try { recognition.start(); recognitionRef.current = recognition; setIsListening(true) } catch { setIsListening(false) } }, [isListening, locale])
-  const addExercise = (exercise: Exercise) => { setActiveExercises(prev => [...prev, { exercise, weight: 0, sets: [], currentReps: 10 }]); setShowPicker(false); setExpandedIndex(activeExercises.length) }
-  const updateWeight = (index: number, weight: number) => { setActiveExercises(prev => prev.map((e, i) => i === index ? { ...e, weight: Math.max(0, weight) } : e)) }
-  const updateReps = (index: number, reps: number) => { setActiveExercises(prev => prev.map((e, i) => i === index ? { ...e, currentReps: Math.max(1, reps) } : e)) }
-  const completeSet = async (index: number) => { const ex = activeExercises[index]; const newSet: WorkoutSet = { weight: ex.weight, reps: ex.currentReps, completedAt: Date.now() }; const updatedSets = [...ex.sets, newSet]; setActiveExercises(prev => prev.map((e, i) => i === index ? { ...e, sets: updatedSets } : e)); setShowTimer(true); if (currentUser) { if (ex.savedId) { await db.workouts.update(ex.savedId, { sets: updatedSets }) } else { const id = await db.workouts.add({ userId: currentUser.id, exerciseId: ex.exercise.id!, exerciseName: ex.exercise.name, category: ex.exercise.category, sets: updatedSets, date: today, createdAt: Date.now() }); setActiveExercises(prev => prev.map((e, i) => i === index ? { ...e, savedId: id } : e)) } } }
-  const removeExercise = (index: number) => { const item = activeExercises[index]; if (item.savedId) db.workouts.delete(item.savedId); setActiveExercises(prev => prev.filter((_, i) => i !== index)); if (expandedIndex === index) setExpandedIndex(null) }
-  const saveWorkout = async () => { if (!currentUser) return; for (const item of activeExercises) { if (!item.savedId && item.sets.length > 0) { await db.workouts.add({ userId: currentUser.id, exerciseId: item.exercise.id!, exerciseName: item.exercise.name, category: item.exercise.category, sets: item.sets, date: today, createdAt: Date.now() }) } }; setActiveExercises([]); setExpandedIndex(null); setInitialLoadDone(false) }
-  return (<div className="space-y-4"><h1 className="text-2xl font-semibold">{t('todaysDashboard')}</h1><div className="card p-4 glow"><button onClick={toggleVoice} className={w-full flex items-center justify-center gap-3 py-4 rounded-xl transition-all duration-200 +String(isListening ? 'bg-gradient-accent text-white animate-pulse' : 'bg-surface-hover text-text-secondary hover:text-text-primary hover:bg-white/10')}><Mic size={24} /><span className="text-lg font-medium">{isListening ? t('listening') : t('voiceHint')}</span></button></div>{activeExercises.length === 0 ? (<div className="card p-6 text-center"><p className="text-text-secondary mb-4">{t('noExercisesYet')}</p><button onClick={() => setShowPicker(true)} className="btn-primary">{t('addExercise')}</button></div>) : (<div className="space-y-3">{activeExercises.map((item, index) => (<div key={String(item.exercise.id)+'-'+String(item.savedId || index)} className="card overflow-hidden"><button onClick={() => setExpandedIndex(expandedIndex === index ? null : index)} className="w-full flex items-center justify-between p-4 text-left"><div className="min-w-0 flex-1"><span className="font-medium truncate block">{getExerciseDisplayName(item.exercise)}</span>{item.sets.length > 0 && <span className="text-xs text-text-muted">{item.sets.length} {t('sets')}</span>}</div><div className="flex items-center gap-2 flex-shrink-0 ml-2">{item.sets.length > 0 && <span className="text-sm text-text-secondary">{item.sets[item.sets.length - 1].weight}kg x {item.sets[item.sets.length - 1].reps}</span>}<button onClick={e => { e.stopPropagation(); removeExercise(index) }} className="p-1 text-text-muted hover:text-red-400"><Trash2 size={14} /></button></div></button>{expandedIndex === index && (<div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3"><div><label className="text-xs text-text-muted block mb-1.5">{t('quickWeight')}</label><div className="grid grid-cols-5 gap-1.5">{QUICK_WEIGHTS.map(w => (<button key={w} onClick={() => updateWeight(index, w)} className={'py-2 rounded-lg text-sm font-medium transition-colors '+(item.weight === w ? 'bg-gradient-accent text-white' : 'bg-surface-hover text-text-secondary')}>{w}</button>))}</div></div><div><label className="text-xs text-text-muted block mb-1.5">{t('weightKg')}</label><div className="flex items-center gap-2"><button onClick={() => updateWeight(index, item.weight - 2.5)} className="btn-secondary px-3 py-1.5 text-sm">-2.5</button><input type="number" inputMode="decimal" value={item.weight || ''} onChange={e => updateWeight(index, parseFloat(e.target.value) || 0)} className="flex-1 text-center text-2xl font-light bg-transparent border-b border-white/10 py-1 focus:outline-none focus:border-accent-from min-w-0" /><button onClick={() => updateWeight(index, item.weight + 2.5)} className="btn-secondary px-3 py-1.5 text-sm">+2.5</button></div></div><div><label className="text-xs text-text-muted block mb-1.5">{t('reps')}</label><div className="flex items-center gap-2"><button onClick={() => updateReps(index, item.currentReps - 1)} className="btn-secondary px-3 py-1.5 text-sm">-1</button><span className="flex-1 text-center text-2xl font-light">{item.currentReps}</span><button onClick={() => updateReps(index, item.currentReps + 1)} className="btn-secondary px-3 py-1.5 text-sm">+1</button></div></div><button onClick={() => completeSet(index)} className="btn-primary w-full flex items-center justify-center gap-2 py-3"><Check size={18} /> {t('completeSet')}</button>{showTimer && expandedIndex === index && <Timer onComplete={() => setShowTimer(false)} />}{item.sets.length > 0 && (<div className="space-y-1 pt-2 border-t border-white/5">{item.sets.map((set, si) => (<div key={si} className="flex justify-between text-sm py-1"><span className="text-text-muted">{t('set')} {si + 1}</span><span>{set.weight}kg x {set.reps}</span></div>))}</div>)}</div>)}</div>))}<div className="flex gap-3"><button onClick={() => setShowPicker(true)} className="flex-1 btn-secondary flex items-center justify-center gap-2 py-3"><Plus size={18} /> {t('addExercise')}</button><button onClick={saveWorkout} className="flex-1 py-3 border border-accent-from/50 rounded-xl text-accent-from font-medium hover:bg-accent-from/10 transition-colors">{t('finishWorkout')}</button></div></div>)}{showPicker && <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)} />}</div>)
+
+  const todaysWorkouts = useLiveQuery(async () => {
+    if (!currentUser) return []
+    return db.workouts.where('userId').equals(currentUser.id).and(w => w.date === today).toArray()
+  }, [currentUser?.id, today])
+
+  useEffect(() => {
+    if (initialLoadDone || !todaysWorkouts) return
+    if (todaysWorkouts.length > 0) {
+      setActiveExercises(todaysWorkouts.map(w => ({
+        exercise: { id: w.exerciseId, name: w.exerciseName, category: w.category, isCustom: false },
+        weight: w.sets.length > 0 ? w.sets[w.sets.length - 1].weight : 0,
+        sets: w.sets,
+        currentReps: w.sets.length > 0 ? w.sets[w.sets.length - 1].reps : 10,
+        savedId: w.id,
+      })))
+    }
+    setInitialLoadDone(true)
+  }, [todaysWorkouts, initialLoadDone])
+
+  const getDisplayName = (ex: Exercise) => locale === 'ja' && ex.nameJa ? ex.nameJa : ex.name
+
+  const toggleVoice = useCallback(() => {
+    if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return }
+    const SR = window.SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) { alert('Speech recognition not supported.'); return }
+    const r = new SR()
+    r.lang = locale === 'ja' ? 'ja-JP' : 'en-US'
+    r.continuous = false; r.interimResults = false; r.maxAlternatives = 1
+    r.onresult = async (ev: SpeechRecognitionEvent) => {
+      const txt = ev.results[0]?.[0]?.transcript
+      if (!txt) return
+      const parsed = await parseVoiceInput(txt)
+      for (const entry of parsed) {
+        if (!entry.exercise) continue
+        const cur = activeExercisesRef.current
+        const idx = cur.findIndex(e => e.exercise.id === entry.exercise!.id)
+        if (idx >= 0 && entry.weight > 0 && entry.reps > 0) {
+          for (let i = 0; i < entry.sets; i++) { const ns: WorkoutSet = { weight: entry.weight, reps: entry.reps, completedAt: Date.now() }; setActiveExercises(p => p.map((e, j) => j === idx ? { ...e, weight: entry.weight, sets: [...e.sets, ns] } : e)) }
+        } else {
+          const ss: WorkoutSet[] = []
+          if (entry.weight > 0 && entry.reps > 0) for (let i = 0; i < entry.sets; i++) ss.push({ weight: entry.weight, reps: entry.reps, completedAt: Date.now() })
+          setActiveExercises(p => [...p, { exercise: entry.exercise!, weight: entry.weight || 0, sets: ss, currentReps: entry.reps || 10 }])
+        }
+      }
+    }
+    r.onerror = () => setIsListening(false)
+    r.onend = () => setIsListening(false)
+    try { r.start(); recognitionRef.current = r; setIsListening(true) } catch { setIsListening(false) }
+  }, [isListening, locale])
+
+  const addExercise = (exercise: Exercise) => { setActiveExercises(p => [...p, { exercise, weight: 0, sets: [], currentReps: 10 }]); setShowPicker(false); setExpandedIndex(activeExercises.length) }
+  const updateWeight = (i: number, w: number) => setActiveExercises(p => p.map((e, j) => j === i ? { ...e, weight: Math.max(0, w) } : e))
+  const updateReps = (i: number, r: number) => setActiveExercises(p => p.map((e, j) => j === i ? { ...e, currentReps: Math.max(1, r) } : e))
+
+  const completeSet = async (index: number) => {
+    const ex = activeExercises[index]
+    const newSet: WorkoutSet = { weight: ex.weight, reps: ex.currentReps, completedAt: Date.now() }
+    const updatedSets = [...ex.sets, newSet]
+    setActiveExercises(p => p.map((e, i) => i === index ? { ...e, sets: updatedSets } : e))
+    setShowTimer(true)
+    if (currentUser) {
+      if (ex.savedId) { await db.workouts.update(ex.savedId, { sets: updatedSets }) }
+      else { const id = await db.workouts.add({ userId: currentUser.id, exerciseId: ex.exercise.id!, exerciseName: ex.exercise.name, category: ex.exercise.category, sets: updatedSets, date: today, createdAt: Date.now() }); setActiveExercises(p => p.map((e, i) => i === index ? { ...e, savedId: id } : e)) }
+    }
+  }
+
+  const removeExercise = (index: number) => { const item = activeExercises[index]; if (item.savedId) db.workouts.delete(item.savedId); setActiveExercises(p => p.filter((_, i) => i !== index)); if (expandedIndex === index) setExpandedIndex(null) }
+
+  const saveWorkout = async () => {
+    if (!currentUser) return
+    for (const item of activeExercises) { if (!item.savedId && item.sets.length > 0) await db.workouts.add({ userId: currentUser.id, exerciseId: item.exercise.id!, exerciseName: item.exercise.name, category: item.exercise.category, sets: item.sets, date: today, createdAt: Date.now() }) }
+    setActiveExercises([]); setExpandedIndex(null); setInitialLoadDone(false)
+  }
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-semibold">{t('todaysDashboard')}</h1>
+      <div className="card p-4 glow">
+        <button onClick={toggleVoice} className={`w-full flex items-center justify-center gap-3 py-4 rounded-xl transition-all duration-200 ${isListening ? 'bg-gradient-accent text-white animate-pulse' : 'bg-surface-hover text-text-secondary hover:text-text-primary hover:bg-white/10'}`}>
+          <Mic size={24} /><span className="text-lg font-medium">{isListening ? t('listening') : t('voiceHint')}</span>
+        </button>
+      </div>
+      {activeExercises.length === 0 ? (
+        <div className="card p-6 text-center"><p className="text-text-secondary mb-4">{t('noExercisesYet')}</p><button onClick={() => setShowPicker(true)} className="btn-primary">{t('addExercise')}</button></div>
+      ) : (
+        <div className="space-y-3">
+          {activeExercises.map((item, index) => (
+            <div key={item.savedId || index} className="card overflow-hidden">
+              <button onClick={() => setExpandedIndex(expandedIndex === index ? null : index)} className="w-full flex items-center justify-between p-4 text-left">
+                <div className="min-w-0 flex-1"><span className="font-medium truncate block">{getDisplayName(item.exercise)}</span>{item.sets.length > 0 && <span className="text-xs text-text-muted">{item.sets.length} {t('sets')}</span>}</div>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">{item.sets.length > 0 && <span className="text-sm text-text-secondary">{item.sets[item.sets.length - 1].weight}kg x {item.sets[item.sets.length - 1].reps}</span>}<button onClick={e => { e.stopPropagation(); removeExercise(index) }} className="p-1 text-text-muted hover:text-red-400"><Trash2 size={14} /></button></div>
+              </button>
+              {expandedIndex === index && (
+                <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
+                  <div><label className="text-xs text-text-muted block mb-1.5">{t('quickWeight')}</label><div className="grid grid-cols-5 gap-1.5">{QUICK_WEIGHTS.map(w => (<button key={w} onClick={() => updateWeight(index, w)} className={`py-2 rounded-lg text-sm font-medium transition-colors ${item.weight === w ? 'bg-gradient-accent text-white' : 'bg-surface-hover text-text-secondary'}`}>{w}</button>))}</div></div>
+                  <div><label className="text-xs text-text-muted block mb-1.5">{t('weightKg')}</label><div className="flex items-center gap-2"><button onClick={() => updateWeight(index, item.weight - 2.5)} className="btn-secondary px-3 py-1.5 text-sm">-2.5</button><input type="number" inputMode="decimal" value={item.weight || ''} onChange={e => updateWeight(index, parseFloat(e.target.value) || 0)} className="flex-1 text-center text-2xl font-light bg-transparent border-b border-white/10 py-1 focus:outline-none focus:border-accent-from min-w-0" /><button onClick={() => updateWeight(index, item.weight + 2.5)} className="btn-secondary px-3 py-1.5 text-sm">+2.5</button></div></div>
+                  <div><label className="text-xs text-text-muted block mb-1.5">{t('reps')}</label><div className="flex items-center gap-2"><button onClick={() => updateReps(index, item.currentReps - 1)} className="btn-secondary px-3 py-1.5 text-sm">-1</button><span className="flex-1 text-center text-2xl font-light">{item.currentReps}</span><button onClick={() => updateReps(index, item.currentReps + 1)} className="btn-secondary px-3 py-1.5 text-sm">+1</button></div></div>
+                  <button onClick={() => completeSet(index)} className="btn-primary w-full flex items-center justify-center gap-2 py-3"><Check size={18} /> {t('completeSet')}</button>
+                  {showTimer && expandedIndex === index && <Timer onComplete={() => setShowTimer(false)} />}
+                  {item.sets.length > 0 && (<div className="space-y-1 pt-2 border-t border-white/5">{item.sets.map((set, si) => (<div key={si} className="flex justify-between text-sm py-1"><span className="text-text-muted">{t('set')} {si + 1}</span><span>{set.weight}kg x {set.reps}</span></div>))}</div>)}
+                </div>
+              )}
+            </div>
+          ))}
+          <div className="flex gap-3"><button onClick={() => setShowPicker(true)} className="flex-1 btn-secondary flex items-center justify-center gap-2 py-3"><Plus size={18} /> {t('addExercise')}</button><button onClick={saveWorkout} className="flex-1 py-3 border border-accent-from/50 rounded-xl text-accent-from font-medium hover:bg-accent-from/10 transition-colors">{t('finishWorkout')}</button></div>
+        </div>
+      )}
+      {showPicker && <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)} />}
+    </div>
+  )
 }
